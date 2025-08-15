@@ -69,6 +69,11 @@ def _safe_json_load(path: Path):
         return _json.load(f)
 
 
+# Ensure session state keys exist
+st.session_state.setdefault("recent_eids", [])
+st.session_state.setdefault("scope_choice", "All episodes")  # will flip to "Recent upload(s)" after indexing
+
+
 # =========================
 # Sidebar: Upload & Index
 # =========================
@@ -106,6 +111,8 @@ with st.sidebar:
 
             os.makedirs("storage/data", exist_ok=True)
 
+            new_eids = []  # collect episode IDs indexed in this run
+
             with st.spinner("Processing episodes..."):
                 ok_count, err_count = 0, 0
                 for f in upl:
@@ -129,6 +136,8 @@ with st.sidebar:
                         }
                         # replace=True ensures re-indexing the SAME episode_id overwrites only its own chunks
                         upsert_episode(chunks, meta, replace=True)
+
+                        new_eids.append(data["episode_id"])
                         ok_count += 1
                     except Exception as ee:
                         err_count += 1
@@ -140,6 +149,12 @@ with st.sidebar:
                 st.info(f"Indexed {ok_count} episode(s), {err_count} failed. Check logs.", icon="ℹ️")
             else:
                 st.error("No episodes were indexed. Please check the logs.", icon="❌")
+
+            # 🚀 Default future searches to the episodes just indexed
+            if new_eids:
+                st.session_state["recent_eids"] = new_eids
+                st.session_state["scope_choice"] = "Recent upload(s)"
+
         except Exception as e:
             st.exception(e)
 
@@ -199,25 +214,33 @@ with st.expander("Index status"):
 colA, colB = st.columns([2, 1], vertical_alignment="bottom")
 
 with colB:
-    # Scope: all episodes vs a single episode
-    scope = st.radio("Search scope", ["All episodes", "Choose one"], index=0)
+    scope_options = ["All episodes", "Recent upload(s)", "Choose one"]
+    scope = st.radio("Search scope", scope_options, key="scope_choice")
+
     chosen_eid = None
+    chosen_eids = None  # for recent multi-episode scope
     scope_count = _N
+
+    if scope == "Recent upload(s)":
+        recent = st.session_state.get("recent_eids") or []
+        if recent:
+            chosen_eids = recent
+            scope_count = sum(episodes_counts.get(e, 0) for e in chosen_eids)
+        else:
+            st.caption("No recent uploads in this session; falling back to all episodes.")
+            scope = "All episodes"
+            scope_count = _N
 
     if scope == "Choose one":
         if episodes_counts:
-            # Build stable, informative labels
             options = []
             for eid, cnt in episodes_counts.items():
                 title = id_to_title.get(eid, "(untitled)")
                 label = f"{title} · {eid[:8]} · {cnt} chunks"
                 options.append((label, eid, cnt))
             options.sort(key=lambda x: x[0].lower())
-
             labels = [o[0] for o in options]
-            default_idx = 0
-            selected_label = st.selectbox("Episode", labels, index=default_idx)
-            # Map label back to (eid, cnt)
+            selected_label = st.selectbox("Episode", labels, index=0, key="choose_one_select")
             for lbl, eid, cnt in options:
                 if lbl == selected_label:
                     chosen_eid = eid
@@ -251,8 +274,16 @@ with colA:
                 st.info("No chunks in the current scope. Upload & index episodes first.")
             else:
                 with st.spinner("Searching…"):
-                    # Prepare filters if a single episode is chosen
-                    filters = {"episode_id": chosen_eid} if chosen_eid else None
+                    # Build filters based on scope
+                    filters = None
+                    if scope == "Choose one" and chosen_eid:
+                        filters = {"episode_id": chosen_eid}
+                    elif scope == "Recent upload(s)" and chosen_eids:
+                        if len(chosen_eids) == 1:
+                            filters = {"episode_id": chosen_eids[0]}
+                        else:
+                            filters = {"$or": [{"episode_id": e} for e in chosen_eids]}
+
                     top_for_retrieval = min(15, scope_count)
                     retriever = _get_retriever(rerank=rerank)
                     hits = retriever.search(query, k=top_for_retrieval, out_k=k, filters=filters)
