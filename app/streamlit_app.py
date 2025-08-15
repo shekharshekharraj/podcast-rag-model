@@ -154,21 +154,28 @@ try:
 except Exception:
     _N = 0
 
+# Precompute episode counts and id->title mapping once (used by Index status and scope picker)
+episodes_counts = {}
+id_to_title = {}
+try:
+    if _N > 0:
+        _got = _coll.get(include=["metadatas"], limit=5000)
+        for m in (_got.get("metadatas") or []):
+            if not m:
+                continue
+            eid = m.get("episode_id")
+            if not eid:
+                continue
+            episodes_counts[eid] = episodes_counts.get(eid, 0) + 1
+            if eid not in id_to_title:
+                id_to_title[eid] = m.get("episode_title", "(untitled)")
+except Exception:
+    pass
+
 # --- Debug / Visibility: what's in the index? ---
 with st.expander("Index status"):
     try:
-        coll = get_chroma()
-        # Pull a snapshot of metadatas to count chunks per episode
-        got = coll.get(include=["metadatas"], limit=5000)
-        counts = {}
-        for m in (got.get("metadatas") or []):
-            if not m:
-                continue
-            eid = m.get("episode_id", "(none)")
-            counts[eid] = counts.get(eid, 0) + 1
-
-        st.json({"total_chunks": _N, "by_episode": counts})
-
+        st.json({"total_chunks": _N, "by_episode": episodes_counts})
         # (Optional) wipe the index for a clean slate
         st.markdown("**Danger zone**")
         c1, c2 = st.columns([1, 1])
@@ -177,7 +184,7 @@ with st.expander("Index status"):
         with c2:
             if st.button("Wipe index", disabled=not confirm):
                 try:
-                    coll.delete(where={})  # delete everything
+                    _coll.delete(where={})  # delete everything
                     st.success("Index cleared. Re-index episodes.")
                     st.stop()
                 except Exception as e:
@@ -186,18 +193,49 @@ with st.expander("Index status"):
         st.caption("(Index status unavailable)")
         st.exception(e)
 
+# =========================
+# Search scope + UI
+# =========================
 colA, colB = st.columns([2, 1], vertical_alignment="bottom")
 
 with colB:
-    # Cap at number of chunks in the index (0..15)
-    max_k = min(15, _N)
+    # Scope: all episodes vs a single episode
+    scope = st.radio("Search scope", ["All episodes", "Choose one"], index=0)
+    chosen_eid = None
+    scope_count = _N
+
+    if scope == "Choose one":
+        if episodes_counts:
+            # Build stable, informative labels
+            options = []
+            for eid, cnt in episodes_counts.items():
+                title = id_to_title.get(eid, "(untitled)")
+                label = f"{title} · {eid[:8]} · {cnt} chunks"
+                options.append((label, eid, cnt))
+            options.sort(key=lambda x: x[0].lower())
+
+            labels = [o[0] for o in options]
+            default_idx = 0
+            selected_label = st.selectbox("Episode", labels, index=default_idx)
+            # Map label back to (eid, cnt)
+            for lbl, eid, cnt in options:
+                if lbl == selected_label:
+                    chosen_eid = eid
+                    scope_count = cnt
+                    break
+        else:
+            st.info("No episodes indexed yet.")
+            scope_count = 0
+
+    # Rerank toggle
     rerank = st.toggle("Re-rank (better precision)", value=False)
 
-    # Guard against Streamlit slider error when min==max
-    if max_k < 2:
+    # Results slider capped to scope size
+    if scope_count <= 1:
         k = 1
-        st.caption("Index has fewer than 2 chunks; showing 1 result.")
+        st.caption("Scope has ≤ 1 chunk; showing 1 result.")
     else:
+        max_k = min(15, scope_count)
         k = st.slider("Max results", min_value=1, max_value=max_k, value=min(8, max_k))
 
 with colA:
@@ -209,29 +247,28 @@ with colA:
     # --- SEARCH BUTTON (wrapped to surface errors nicely) ---
     if st.button("Search", type="primary") and query:
         try:
-            if _N == 0:
-                st.info("No chunks indexed yet. Upload and index episodes in the sidebar.")
+            if scope_count == 0:
+                st.info("No chunks in the current scope. Upload & index episodes first.")
             else:
                 with st.spinner("Searching…"):
-                    # Request up to min(15, N) for retrieval, show top-k
-                    top_for_retrieval = min(15, _N)
+                    # Prepare filters if a single episode is chosen
+                    filters = {"episode_id": chosen_eid} if chosen_eid else None
+                    top_for_retrieval = min(15, scope_count)
                     retriever = _get_retriever(rerank=rerank)
-                    hits = retriever.search(query, k=top_for_retrieval, out_k=k)
+                    hits = retriever.search(query, k=top_for_retrieval, out_k=k, filters=filters)
 
                 if not hits:
-                    st.info("No matches found.")
+                    st.info("No matches found for the current scope.")
                 else:
                     for hid, text, meta in hits:
                         with st.container(border=True):
-                            # Header line with episode and time span
                             st.markdown(
                                 f"**{meta.get('episode_title','(untitled)')}**  ·  "
-                                f"⏱️ {ts_to_mmss(meta.get('start_time', 0))} – {ts_to_mmss(meta.get('end_time', 0))}"
+                                f"⏱️ {ts_to_mmss(meta.get('start_time', 0))} – "
+                                f"{ts_to_mmss(meta.get('end_time', 0))}"
                             )
-                            # Result text
                             st.write(text)
 
-                            # Speakers (if available)
                             spk_meta = meta.get("speakers_json") or meta.get("speakers")
                             spk_dict = {}
                             if isinstance(spk_meta, str):
