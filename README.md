@@ -1,4 +1,4 @@
-🎙️ Audio-to-Text RAG for Podcast Search
+#🎙️ Audio-to-Text RAG for Podcast Search
 
 Upload podcast episodes → transcribe (word timestamps) → (optional) diarize speakers → time-aware chunking → vector search across episodes → query with timestamped results in a clean Streamlit UI.
 
