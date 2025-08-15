@@ -1,4 +1,4 @@
-#🎙️ Audio-to-Text RAG for Podcast Search
+#🎙Audio-to-Text RAG for Podcast Search
 
 Upload podcast episodes → transcribe (word timestamps) → (optional) diarize speakers → time-aware chunking → vector search across episodes → query with timestamped results in a clean Streamlit UI.
 
@@ -10,6 +10,7 @@ Built for local dev (Chroma, CPU-friendly), easy GPU upgrade, and one-click depl
 
 Built for local dev (Chroma, CPU-friendly), easy GPU upgrade, and one-click deploy to Hugging Face Spaces.
 
+##Live app: https://podcast-rag-model-shekhar.streamlit.app
 
 Table of Contents
 
