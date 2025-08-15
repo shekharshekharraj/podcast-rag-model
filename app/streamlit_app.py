@@ -2,9 +2,12 @@
 # Global env & shims
 # =========================
 
-# Silence Chroma telemetry noise in logs
+# Silence Chroma telemetry noise in logs (belt & suspenders)
 import os
 os.environ.setdefault("CHROMA_TELEMETRY", "0")
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "0")
+os.environ.setdefault("CHROMA_SERVER_NO_TELEMETRY", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # Default to CPU-safe settings (don’t override if user already set these)
 os.environ.setdefault("CT2_FORCE_CPU", "1")          # helps faster-whisper on CPU-only runners
@@ -18,6 +21,8 @@ try:
     sys.modules["sqlite3"] = pysqlite3
 except Exception:
     pass
+
+import sys  # ensure sys exists even if the try-block above failed
 
 # Robust project-root import shim (so "pipeline/..." and "app/..." can be imported)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -82,8 +87,9 @@ with st.sidebar:
 
     titles = {}
     if upl:
-        for f in upl:
-            titles[f.name] = st.text_input(f"Title for {f.name}", value=f.name)
+        for i, f in enumerate(upl):
+            # unique key avoids widget collisions when filenames repeat
+            titles[f.name] = st.text_input(f"Title for {f.name}", value=f.name, key=f"title_{i}_{f.name}")
 
     if st.button("Process & Index", type="primary", use_container_width=True):
         if not upl:
@@ -100,7 +106,7 @@ with st.sidebar:
                     with open(raw_path, "wb") as w:
                         w.write(f.read())
 
-                    ep_json_path, ep_id = process_episode(raw_path, titles[f.name])
+                    ep_json_path, ep_id = process_episode(raw_path, titles.get(f.name, f.name))
                     data = _safe_json_load(Path(ep_json_path))
 
                     # Assign speakers, build sentences and time-aware windows
