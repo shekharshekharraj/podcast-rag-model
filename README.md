@@ -41,11 +41,6 @@ Table of Contents
 * Streamlit UI: episode title, `MM:SS` range, speaker hints
 * Runs well on **CPU**; **GPU** is plug-and-play later
 
----
-
-Architecture
-
-```mermaid
 flowchart TD
     A[Audio (.mp3/.wav/.m4a)] --> B[FFmpeg resample → 16k mono WAV]
     B --> C[Whisper (faster-whisper)\nwords + timestamps]
