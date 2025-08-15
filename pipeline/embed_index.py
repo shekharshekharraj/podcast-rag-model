@@ -1,13 +1,14 @@
 # pipeline/embed_index.py
+
+# --- Quiet logs & ensure modern sqlite for Chroma (works on Streamlit Cloud) ---
 import os
 os.environ.setdefault("CHROMA_TELEMETRY", "0")
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "0")
 os.environ.setdefault("CHROMA_SERVER_NO_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-# Ensure modern sqlite for Chroma (Streamlit Cloud)
 try:
-    import sys, pysqlite3
+    import sys, pysqlite3  # provided by pysqlite3-binary in requirements.txt
     sys.modules["sqlite3"] = pysqlite3
 except Exception:
     pass
@@ -27,6 +28,7 @@ except Exception:
 _EMBEDDER = None
 _COLL = None
 
+
 def get_chroma():
     """Return a persistent Chroma collection with telemetry disabled."""
     global _COLL
@@ -41,6 +43,7 @@ def get_chroma():
         )
     return _COLL
 
+
 def _get_embedder(model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
     """Lazy import to avoid pulling torch at app boot."""
     global _EMBEDDER
@@ -49,11 +52,35 @@ def _get_embedder(model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
         _EMBEDDER = SentenceTransformer(model_name)
     return _EMBEDDER
 
-def upsert_episode(chunks, episode_meta):
+
+def delete_episode(episode_id: str | int):
+    """Remove all chunks for an episode before re-inserting (prevents duplicate-ID errors)."""
+    coll = get_chroma()
+    try:
+        coll.delete(where={"episode_id": str(episode_id)})
+    except Exception:
+        # Safe to ignore if nothing to delete
+        pass
+
+
+def upsert_episode(chunks, episode_meta, batch_size: int = 200, replace: bool = True):
     """
-    chunks: list of dicts with keys: text, start, end, tokens, speakers(dict)
-    episode_meta: {"episode_id": ..., "episode_title": ...}
+    Upsert a list of chunk dicts:
+      {
+        "text": str,
+        "start": float,
+        "end": float,
+        "tokens": int,
+        "speakers": { "SPK0": seconds_float, ... }  # optional
+      }
+    Episode metadata must have: {"episode_id": str/int, "episode_title": str}
+
+    If replace=True, we first delete existing vectors for this episode_id.
     """
+    episode_id = str(episode_meta.get("episode_id", ""))
+    if replace and episode_id:
+        delete_episode(episode_id)
+
     coll = get_chroma()
     emb = _get_embedder()
 
@@ -77,10 +104,10 @@ def upsert_episode(chunks, episode_meta):
         else:
             top_speaker, top_speaker_secs = "", 0.0
 
-        ids.append(f"{episode_meta['episode_id']}_{idx}")
+        ids.append(f"{episode_id}_{idx}")
         docs.append(text)
         metas.append({
-            "episode_id": str(episode_meta.get("episode_id", "")),
+            "episode_id": episode_id,
             "episode_title": str(episode_meta.get("episode_title", "")),
             "start_time": start,
             "end_time": end,
@@ -91,6 +118,19 @@ def upsert_episode(chunks, episode_meta):
             "speakers_json": json.dumps(speakers_clean, ensure_ascii=False),
         })
 
-    if docs:
-        embeddings = emb.encode(docs, normalize_embeddings=True, show_progress_bar=False).tolist()
-        coll.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=embeddings)
+    if not docs:
+        return
+
+    # Embed once for all docs, then upsert in batches to avoid memory spikes
+    embeddings = _get_embedder().encode(
+        docs, normalize_embeddings=True, show_progress_bar=False
+    ).tolist()
+
+    for i in range(0, len(docs), batch_size):
+        j = i + batch_size
+        coll.upsert(
+            ids=ids[i:j],
+            documents=docs[i:j],
+            metadatas=metas[i:j],
+            embeddings=embeddings[i:j],
+        )
