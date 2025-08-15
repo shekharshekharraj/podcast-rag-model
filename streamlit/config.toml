@@ -1,2 +1,4 @@
 [server]
-fileWatcherType = "none"   # or "poll" if you want auto-reload without inotify
+fileWatcherType = "poll"
+folderWatchBlacklist = [".venv", "storage/chroma", "storage/data", ".cache", "__pycache__"]
+
