@@ -119,7 +119,8 @@ with st.sidebar:
                         "episode_id": data["episode_id"],
                         "episode_title": data["episode_title"],
                     }
-                    upsert_episode(chunks, meta)
+                    # IMPORTANT: replace=True prevents duplicate-ID crashes on re-index
+                    upsert_episode(chunks, meta, replace=True)
                     ok_count += 1
                 except Exception as e:
                     err_count += 1
@@ -127,8 +128,11 @@ with st.sidebar:
 
         if ok_count and not err_count:
             st.success(f"Indexed {ok_count} episode(s). Go search ➡️", icon="✅")
+            # Refresh state so the slider reflects new index size and avoids stale UI
+            st.rerun()
         elif ok_count and err_count:
             st.info(f"Indexed {ok_count} episode(s), {err_count} failed. Check logs.", icon="ℹ️")
+            st.rerun()
         else:
             st.error("No episodes were indexed. Please check the logs.", icon="❌")
 
