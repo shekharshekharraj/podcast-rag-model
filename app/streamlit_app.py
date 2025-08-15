@@ -20,7 +20,6 @@ except Exception:
     pass
 
 # Robust project-root import shim (so "pipeline/..." and "app/..." can be imported)
-import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -141,10 +140,16 @@ except Exception:
 colA, colB = st.columns([2, 1], vertical_alignment="bottom")
 
 with colB:
-    # Cap at number of chunks in the index (1..15)
-    max_k = max(1, min(15, _N or 1))
-    k = st.slider("Max results", min_value=1, max_value=max_k, value=min(8, max_k))
+    # Cap at number of chunks in the index (0..15)
+    max_k = min(15, _N)
     rerank = st.toggle("Re-rank (better precision)", value=False)
+
+    # Guard against Streamlit slider error when min==max
+    if max_k < 2:
+        k = 1
+        st.caption("Index has fewer than 2 chunks; showing 1 result.")
+    else:
+        k = st.slider("Max results", min_value=1, max_value=max_k, value=min(8, max_k))
 
 with colA:
     query = st.text_input(
