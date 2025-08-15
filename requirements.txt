@@ -29,3 +29,4 @@ pyannote.audio==3.1.1
 julius==0.2.7
 omegaconf==2.3.0
 antlr4-python3-runtime==4.9.3
+posthog==3.5.0
