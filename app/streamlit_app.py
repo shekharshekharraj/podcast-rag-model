@@ -136,10 +136,8 @@ with st.sidebar:
 
             if ok_count and not err_count:
                 st.success(f"Indexed {ok_count} episode(s). Go search ➡️", icon="✅")
-                st.rerun()  # refresh UI to reflect new index size
             elif ok_count and err_count:
                 st.info(f"Indexed {ok_count} episode(s), {err_count} failed. Check logs.", icon="ℹ️")
-                st.rerun()
             else:
                 st.error("No episodes were indexed. Please check the logs.", icon="❌")
         except Exception as e:
