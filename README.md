@@ -8,397 +8,216 @@ Built for local dev (Chroma, CPU-friendly), easy GPU upgrade, and one-click depl
 <img width="1317" height="841" alt="rag2" src="https://github.com/user-attachments/assets/bb3fec99-d860-4022-8005-893341d865fd" />
 <img width="417" height="850" alt="rag3" src="https://github.com/user-attachments/assets/631c6323-689e-4798-8273-37af88f50d5a" />
 
+Built for local dev (Chroma, CPU-friendly), easy GPU upgrade, and one-click deploy to Hugging Face Spaces.
 
 
 Table of Contents
 
-Key Features
+* [Features](#features)
+* [Architecture](#architecture)
+* [Repository Structure](#repository-structure)
+* [Requirements](#requirements)
+* [Quickstart](#quickstart)
 
-System Architecture
+  * [Windows (PowerShell, Python 3.11, CPU)](#windows-powershell-python-311-cpu)
+  * [macOS / Linux](#macos--linux)
+* [Environment Variables](#environment-variables)
+* [Using the App](#using-the-app)
+* [Deployment](#deployment)
 
-Repository Structure
+  * [Hugging Face Spaces](#hugging-face-spaces)
+  * [Docker](#docker)
+* [Troubleshooting](#troubleshooting)
+* [Security & Privacy](#security--privacy)
+* [License & Credits](#license--credits)
 
-Requirements
+## Features
 
-Quickstart
+* Whisper (**faster-whisper**) with **word-level timestamps**
+* **Optional** speaker diarization via **pyannote.audio**
+* Time-aware chunking (with overlap) to preserve context
+* Vector search with **Chroma** (local, persistent)
+* Optional **CrossEncoder** reranking for tighter precision
+* Streamlit UI: episode title, `MM:SS` range, speaker hints
+* Runs well on **CPU**; **GPU** is plug-and-play later
 
-Windows (PowerShell, Python 3.11, CPU)
+---
 
-macOS / Linux
+Architecture
 
-Environment Variables
+```mermaid
+flowchart TD
+    A[Audio (.mp3/.wav/.m4a)] --> B[FFmpeg resample → 16k mono WAV]
+    B --> C[Whisper (faster-whisper)\nwords + timestamps]
+    C -->|optional| D[pyannote.audio diarization\nwho spoke when]
+    C --> E[Align words ↔ speakers → sentences]
+    E --> F[Time-aware windows\n(~400 tokens, ~20% overlap)]
+    F --> G[Embeddings (Sentence-Transformers)]
+    G --> H[Chroma (persistent store)]
+    I[Query] --> J[kNN retrieve ± CrossEncoder rerank]
+    H --> J --> K[Streamlit UI\nepisode + timestamped snippets]
+```
 
-Using the App
 
-Pipeline Details
+## Repository Structure
 
-Transcription
-
-Diarization
-
-Alignment & Chunking
-
-Embeddings & Index
-
-Retrieval & (Optional) Reranking
-
-Evaluation (RAGAS)
-
-Deployment
-
-Hugging Face Spaces
-
-Docker
-
-Customization
-
-Troubleshooting
-
-Security & Privacy
-
-License
-
-Acknowledgments
-
-Key Features
-
-Whisper (faster-whisper) for accurate transcription with word-level timestamps
-
-Optional pyannote.audio diarization (“who spoke when”)
-
-Time-aware chunking with overlap to preserve context
-
-Vector search with Chroma (local, persistent on disk)
-
-(Optional) CrossEncoder reranking for precision on tricky queries
-
-Streamlit UI with episode titles, MM:SS ranges, and speaker hints
-
-“Just works” on CPU with easy environment flags; GPU support is plug-and-play later
-
-One-click deploy to Hugging Face Spaces (Streamlit)
-
-System Architecture
-Audio (.mp3/.wav/.m4a)
-      │
-      ▼
-FFmpeg resample → 16k mono WAV
-      │
-      ▼
-Whisper (faster-whisper) → words + timestamps
-      │
-      ├─► (optional) pyannote.audio diarization → speaker turns
-      │
-      ▼
-Align words ↔ speakers → sentences → time-aware windows
-      │
-      ▼
-Embeddings (sentence-transformers) → Chroma (persistent)
-      │
-      ▼
-Query → kNN retrieve (± CrossEncoder rerank) → timestamped results in Streamlit
-
-Repository Structure
+```
 podcast-rag/
 ├─ app/
-│  ├─ streamlit_app.py         # UI + search
-│  ├─ components.py            # tiny UI helpers
-│  └─ prompts.py               # (for LLM answer templating, if used)
+│  ├─ streamlit_app.py      # UI + search
+│  ├─ components.py         # small UI helpers
+│  └─ prompts.py            # (optional) LLM templating
 ├─ pipeline/
-│  ├─ ingest.py                # ffmpeg resample → whisper → (optional) diarize → save JSON
-│  ├─ align.py                 # assign speakers to words + sentence building
-│  ├─ chunk.py                 # time-aware windowing with overlap
-│  ├─ embed_index.py           # embeddings + Chroma upsert
-│  └─ retrieve.py              # retrieval + optional CrossEncoder rerank
+│  ├─ ingest.py             # resample → whisper → (optional) diarize → JSON
+│  ├─ align.py              # assign speakers to words + sentence building
+│  ├─ chunk.py              # time-aware windowing with overlap
+│  ├─ embed_index.py        # embeddings + Chroma upsert
+│  └─ retrieve.py           # retrieval + optional rerank
 ├─ storage/
-│  ├─ chroma/                  # vector DB (persisted; gitignored)
-│  └─ data/                    # uploaded audio + episode JSON
+│  ├─ chroma/               # vector DB (gitignored)
+│  └─ data/                 # uploaded audio + episode JSON
 ├─ eval/
-│  └─ dataset.jsonl            # (optional) RAG evaluation sets
+│  └─ dataset.jsonl         # (optional) RAG evaluation sets
 ├─ requirements.txt
 ├─ Dockerfile
 └─ README.md
+```
 
-Requirements
 
-Python 3.11 (recommended for Windows; stable wheels for ML/audio stacks)
 
-FFmpeg (CLI) – or imageio-ffmpeg is used automatically via code (no system install needed)
+## Requirements
 
-CPU is fine; GPU later requires a matching CUDA/cuDNN stack
+* **Python 3.11** (recommended on Windows for stable wheels)
+* **FFmpeg** CLI (or rely on bundled `imageio-ffmpeg` path in code)
+* CPU works fine; GPU requires a matching CUDA/cuDNN stack
 
-If you’re on Windows, the project includes fixes to avoid common pitfalls (pyarrow version pin, optional diarization, ffmpeg path resolution, etc).
 
-Quickstart
-Windows (PowerShell, Python 3.11, CPU)
-# 0) Go to your project dir
+
+## Quickstart
+
+### Windows (PowerShell, Python 3.11, CPU)
+
+```powershell
 cd D:\podcast-rag
 
-# 1) Create venv (Python 3.11)
+# Create & activate venv (allow scripts if prompted)
 py -3.11 -m venv .venv
-
-# If activation policy blocks scripts (one-time per terminal):
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-
-# Activate (optional; you can also always use .\.venv\Scripts\python)
 .\.venv\Scripts\Activate
 
-# 2) Install deps
+# Install deps
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt --no-cache-dir
 
-# 3) (Optional) install FFmpeg system-wide OR skip; code uses imageio-ffmpeg internally
-# winget install Gyan.FFmpeg
-# ffmpeg -version
+# CPU-friendly flags (avoid CUDA DLL issues)
+$Env:CT2_FORCE_CPU = "1"
+$Env:CUDA_VISIBLE_DEVICES = ""
+$Env:WHISPER_MODEL = "medium"   # use "large-v3" later for best accuracy
 
-# 4) CPU-friendly env flags (recommended)
-$Env:CT2_FORCE_CPU = "1"         # force faster-whisper to CPU
-$Env:CUDA_VISIBLE_DEVICES = ""   # hide GPUs to avoid cuDNN errors
-$Env:WHISPER_MODEL = "medium"    # faster CPU testing; use "large-v3" for accuracy
-
-# 5) (Optional) diarization token – enables pyannote
+# (Optional) enable diarization
 # $Env:HF_TOKEN = "hf_XXXXXXXXXXXXXXXXXXXXXXXX"
 
-# 6) Run the app
+# Launch
 python -m streamlit run app\streamlit_app.py
+```
 
+Quick test WAV (PowerShell TTS):**
 
-PowerShell TTS (make a quick test WAV):
-
+```powershell
 Add-Type -AssemblyName System.Speech
 $tts = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $tts.SetOutputToWaveFile("episode1.wav")
 $tts.Speak("This is a quick test of our podcast RAG system. We mention transfer learning, Chroma, and diarization.")
 $tts.Dispose()
+```
 
 macOS / Linux
-# 0) System dep
-brew install ffmpeg         # macOS (or) sudo apt-get install -y ffmpeg  # Ubuntu
 
-# 1) Create venv
-python3 -m venv .venv
-source .venv/bin/activate
+```bash
+# System dep
+brew install ffmpeg            # macOS
+# or: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-# 2) Install deps
+python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt --no-cache-dir
 
-# 3) CPU mode (optional)
+# Optional CPU flags
 export CT2_FORCE_CPU=1
 export WHISPER_MODEL=medium
 
-# 4) (Optional) diarization token
+# Optional diarization
 # export HF_TOKEN=hf_XXXXXXXXXXXXXXXXXXXXXXXX
 
-# 5) Run
 streamlit run app/streamlit_app.py
+```
+
 
 Environment Variables
-Variable	Purpose	Example
-WHISPER_MODEL	Whisper size (medium, large-v3, etc.)	medium
-WHISPER_DEVICE	Optional override (cpu/cuda)	cpu
-CT2_FORCE_CPU	Force CTranslate2 to use CPU	1
-CUDA_VISIBLE_DEVICES	Hide GPUs for CPU-only runs	""
-HF_TOKEN	Hugging Face token for pyannote diarization	hf_XXXXXXXXXXXXXXXXXXXXXXXX
-CHROMA_TELEMETRY	Silence Chroma telemetry warnings	0
-HF_HUB_DISABLE_SYMLINKS_WARNING	Silence Windows symlink cache warnings	1
 
-You can also set HF_TOKEN in .streamlit/secrets.toml and the app will pick it up.
+| Variable                          | Purpose                         | Example               |
+| --------------------------------- | ------------------------------- | --------------------- |
+| `WHISPER_MODEL`                   | Whisper size                    | `medium` / `large-v3` |
+| `WHISPER_DEVICE`                  | Force device                    | `cpu` / `cuda`        |
+| `CT2_FORCE_CPU`                   | Force CTranslate2 CPU           | `1`                   |
+| `CUDA_VISIBLE_DEVICES`            | Hide GPUs                       | `""`                  |
+| `HF_TOKEN`                        | Enable diarization (pyannote)   | `hf_…`                |
+| `CHROMA_TELEMETRY`                | Silence Chroma telemetry        | `0`                   |
+| `HF_HUB_DISABLE_SYMLINKS_WARNING` | Silence Windows symlink warning | `1`                   |
+
+> You can also put `HF_TOKEN` in `.streamlit/secrets.toml`.
 
 Using the App
 
-Open the Streamlit UI (http://localhost:8501).
+1. Open **[http://localhost:8501](http://localhost:8501)**.
+2. In the **sidebar**, upload `.mp3/.wav/.m4a` and give each a title.
+3. Click **Process & Index** (resample → transcribe → optional diarize → chunk → embed → index).
+4. Search in the main panel; results show episode, `MM:SS` range, speaker hints, and snippet.
 
-In the sidebar, upload one or more .mp3/.wav/.m4a files and give each a title.
+Try: *“What is transfer learning?”*, *“Which vector database is used?”*, *“What does diarization mean?”*.
 
-Click Process & Index:
+---
 
-Convert audio → 16 kHz mono WAV (via imageio-ffmpeg)
+## Deployment
 
-Transcribe with Whisper (word timestamps)
+### Hugging Face Spaces
 
-(Optional) Diarize with pyannote (if HF_TOKEN present)
+1. New **Space** → **Streamlit**
+2. Push this repo
+3. **Settings → Variables & secrets**: add `HF_TOKEN` (optional)
+4. Run (switch Hardware to a small GPU if needed)
 
-Build time-aware windows (overlap for context)
+### Docker
 
-Embed and upsert into Chroma
-
-Use the search box (main panel). Results show:
-
-Episode title
-
-MM:SS start–end range
-
-Speakers (if diarization enabled)
-
-Snippet text
-
-Suggested queries:
-
-“What is transfer learning?”
-
-“Which vector database is used?”
-
-“How big is each chunk?”
-
-“What does diarization mean?”
-
-Pipeline Details
-Transcription
-
-Library: faster-whisper
-
-Default model: medium (CPU-friendly); change with WHISPER_MODEL
-
-Output: word list with text, start, end seconds
-
-Diarization
-
-Library: pyannote.audio (optional)
-
-Requires HF_TOKEN (and agreement on model page)
-
-When unavailable, the pipeline gracefully falls back to a single speaker.
-
-Alignment & Chunking
-
-Words are assigned to speakers based on time overlap.
-
-Sentences are constructed with punctuation and max char length caps.
-
-Windows target ~400 tokens with ~20% overlap to preserve context across boundaries.
-
-Embeddings & Index
-
-Embeddings: sentence-transformers/all-MiniLM-L6-v2
-
-DB: Chroma (persistent at storage/chroma/)
-
-Metadata: episode id/title, start_time, end_time, tokens, n_speakers, top_speaker, and speakers_json (stringified)
-
-Retrieval & (Optional) Reranking
-
-kNN from Chroma → top-k candidate chunks
-
-CrossEncoder (ms-marco-MiniLM-L-6-v2) rerank toggle in UI for improved precision
-
-Evaluation (RAGAS)
-
-You can evaluate with RAGAS using a small dataset of (question, answer, context) in eval/dataset.jsonl. Example:
-
-{"question": "What is transfer learning?", "answer": "…", "contexts": ["…", "…"]}
-
-
-Basic loop (pseudo):
-
-from ragas import evaluate
-# build dataset dict with "question", "answer", "contexts"
-score = evaluate(dataset)
-print(score)
-
-Deployment
-Hugging Face Spaces
-
-Create a New Space → Streamlit.
-
-Push the repo files.
-
-In Settings → Variables and secrets, add:
-
-HF_TOKEN (for diarization; optional)
-
-Spaces will install from requirements.txt and auto-launch.
-
-If latency is high, switch Hardware to a small GPU.
-
-Notes for Spaces:
-
-CPU works; use WHISPER_MODEL=medium for speed.
-
-Very large uploads can hit free-tier timeouts.
-
-Docker
+```bash
 docker build -t podcast-rag .
-docker run --rm -it -p 7860:7860 \
-  -e HF_TOKEN=$HF_TOKEN \
-  podcast-rag
-# Open http://localhost:7860
-
-Customization
-
-Faster Whisper model: set WHISPER_MODEL to large-v3 for max accuracy (slower on CPU).
-
-Device: set WHISPER_DEVICE=cpu|cuda; default is CPU in this template.
-
-Vector DB: swap Chroma for Pinecone/Weaviate by replacing:
-
-pipeline/embed_index.py (client + upserts)
-
-pipeline/retrieve.py (queries/filters)
-
-Reranking: default off in UI; enable per search if you prefer precision.
-
-Chunking: tune target tokens & overlap in pipeline/chunk.py.
+docker run --rm -it -p 7860:7860 -e HF_TOKEN=$HF_TOKEN podcast-rag
+# open http://localhost:7860
+```
 
 Troubleshooting
 
-“FileNotFoundError in ffmpeg”
+* **ffmpeg not found** → project calls a bundled `imageio-ffmpeg` binary; ensure `requirements.txt` installed.
+* **`pyarrow.PyExtensionType` error** → pin `pyarrow==14.0.2`.
+* **`pypika.dialects` missing** → use `chromadb==0.5.5`, `pypika==0.48.9`.
+* **CUDA/cuDNN DLL warnings (Windows)** → set `CT2_FORCE_CPU=1` and `CUDA_VISIBLE_DEVICES=""`.
+* **No HF token** → diarization gracefully falls back to single speaker.
 
-The project calls ffmpeg by absolute path via imageio-ffmpeg — no system install needed.
-
-If you edited code and reintroduced ffmpeg-python, either install FFmpeg (winget install Gyan.FFmpeg) or restore the bundled call in ingest.py.
-
-Windows: ModuleNotFoundError: pypika.dialects
-
-Use pinned versions: chromadb==0.5.5, pypika==0.48.9.
-
-Windows: AttributeError: pyarrow.PyExtensionType
-
-Pin pyarrow==14.0.2.
-
-Diarization assertion / HF_TOKEN
-
-Either set a token (HF_TOKEN=hf_…) or rely on the single-speaker fallback (default).
-
-CUDA/cuDNN DLL errors (Windows)
-
-Force CPU: set CT2_FORCE_CPU=1 and CUDA_VISIBLE_DEVICES="".
-
-PowerShell script activation blocked
-
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-
-Slow on CPU
-
-Use WHISPER_MODEL=medium, keep reranking off, or try GPU hardware (Spaces).
+---
 
 Security & Privacy
 
-Audio is processed locally in your environment (or your Space).
+* Audio stays local (or within your Space).
+* Vector DB persists under `storage/chroma/` (gitignored).
+* Don’t commit raw audio or vector stores unless intended.
+* Keep tokens in env vars or `.streamlit/secrets.toml`.
 
-Vector DB lives in storage/chroma/ (gitignored).
+---
 
-Do not commit raw audio or vector stores unless you intend to share them.
+License & Credits
 
-Keep tokens (e.g., HF_TOKEN) in environment variables or .streamlit/secrets.toml:
+* **License:** MIT
+* **Credits:** OpenAI Whisper (via faster-whisper / CTranslate2), pyannote.audio, Sentence-Transformers, ChromaDB, Streamlit
+* **Author:** Raj Shekhar
 
-HF_TOKEN = "hf_XXXXXXXXXXXXXXXXXXXXXXXX"
-
-License
-
-MIT
-
-Acknowledgments
-
-OpenAI Whisper (via faster-whisper / CTranslate2)
-
-pyannote.audio for robust diarization
-
-Sentence Transformers for embeddings
-
-ChromaDB for easy local vector search
-
-Streamlit for the UI
-
-Made by Raj Shekhar
-
+---
